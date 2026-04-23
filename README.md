@@ -1,4 +1,4 @@
-# ? AI-Powered Energy Management System
+#  AI-Powered Energy Management System
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9-blue)](https://www.python.org/)
 [![Dash](https://img.shields.io/badge/Dash-2.x-green)](https://plotly.com/dash/)
@@ -84,7 +84,7 @@ AI-Powered Energy Consumption Forecasting System/
 
 ---
 
-## ?? Dashboards
+##  Dashboards
 
 ### 1. Home Energy Management
 - `dashboard_appliance.py`
@@ -111,7 +111,7 @@ AI-Powered Energy Consumption Forecasting System/
 
 ---
 
-## ?? Installation
+##  Installation
 
 1. Clone the repo:
    ```bash
@@ -130,7 +130,7 @@ AI-Powered Energy Consumption Forecasting System/
 
 ---
 
-## ??? Generate Data & Models
+##  Generate Data & Models
 
 Run the relevant scripts to generate datasets and model artifacts:
 
@@ -145,13 +145,13 @@ The last command generates comparison graphs under `outputs/figures/`.
 
 ---
 
-## ?? Requirements
+##  Requirements
 
 The main dependencies are listed in `requirements.txt` and include Dash and Plotly for the dashboards.
 
 ---
 
-## ?? GitHub Publication Guide
+##  GitHub Publication Guide
 
 ### 1. Initialize the repository
 
@@ -186,7 +186,7 @@ git push -u origin main
 
 ---
 
-## ?? Final Notes
+##  Final Notes
 
 - The integrated dashboard is titled **Energy Sector Analysis: Carbon Credits in ?**.
 - The home dashboard retains **neural network forecasting** and **load shedding**.
@@ -194,6 +194,6 @@ git push -u origin main
 
 ---
 
-## ?? Contact
+##  Contact
 
-[Your LinkedIn] | [Your Portfolio] | [Email]
+www.linkedin.com/in/tannika-ghosh-0b1497338| ghoshtannikaofficial2002@gmail.com 
