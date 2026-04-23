@@ -46,6 +46,7 @@ except FileNotFoundError:
 model = joblib.load('models/nn_energy_model.save')
 scaler = joblib.load('models/scaler.save')
 SEQ_LEN = 24
+CARBON_CREDIT_PRICE_INR = 2000
 
 PRIORITY_ORDER = ['Robot_W', 'TV_W', 'Lights_W', 'Fridge_W', 'WaterHeater_W', 'HVAC_W']
 APPLIANCE_NAMES = {
@@ -59,7 +60,7 @@ sector_keys = list(SECTORS.keys())
 all_data = {}
 carbon_results = {}
 for key in sector_keys:
-    df_sector = generate_sector_data(key, days=30)  # shorter for demo
+    df_sector = generate_sector_data(key, days=365)  # Use full year for better seasonal variation
     all_data[key] = df_sector
     credits, co2 = calculate_carbon_credits(df_sector['Energy_kW'], 
                                             SECTORS[key]['baseline_waste'],
@@ -414,7 +415,7 @@ def update_sector_analysis(sector_key):
     gauge = go.Figure(go.Indicator(
         mode = "gauge+number+delta",
         value = credits,
-        title = {'text': f"Carbon Credits Earned (₹{config['carbon_price_per_ton']}/ton)"},
+        title = {'text': f"Carbon Credits Earned (₹{CARBON_CREDIT_PRICE_INR}/ton)"},
         delta = {'reference': 0},
         gauge = {'axis': {'range': [0, max(credits*1.2, 100)]}, 'bar': {'color': "green"}}
     ))
@@ -422,12 +423,13 @@ def update_sector_analysis(sector_key):
     # Weekly pattern
     weekly = df_sector.groupby(df_sector.index.dayofweek)['Energy_kW'].mean()
     weekly_fig = px.bar(x=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], y=weekly.values,
-                        title='Average Energy by Day of Week', labels={'x': 'Day', 'y': 'Energy (kW)'})
+                        title=f'Average Energy by Day of Week - {sector_key.replace("_", " ")}', labels={'x': 'Day', 'y': 'Energy (kW)'})
     
     # Seasonal trend
     seasonal = df_sector.groupby(df_sector.index.month)['Energy_kW'].mean()
+    seasonal = seasonal.reindex(range(1,13), fill_value=float('nan'))  # Ensure all months are present
     seasonal_fig = px.line(x=range(1,13), y=seasonal.values,
-                           title='Average Energy by Month', labels={'x': 'Month', 'y': 'Energy (kW)'})
+                           title=f'Average Energy by Month - {sector_key.replace("_", " ")}', labels={'x': 'Month', 'y': 'Energy (kW)'})
     
     credit_text = f"🏆 {sector_key.replace('_', ' ')} Sector: Earned ₹{credits:.0f} in carbon credits by saving {co2:.1f} tons of CO₂ through AI forecasting."
     

@@ -20,6 +20,7 @@ SECTORS = {
         'off_peak_multiplier': 0.6,
         'seasonal_peak_months': [4,5,6,12],  # summer & winter
         'seasonal_factor': 1.3,
+        'weekend_factor': 1.2,  # higher on weekends
         'carbon_intensity': 300,    # gCO2/kWh
         'baseline_waste': 0.20      # 20% waste without AI
     },
@@ -30,6 +31,7 @@ SECTORS = {
         'off_peak_multiplier': 0.7,
         'seasonal_peak_months': [9,10,11,12],  # festive season
         'seasonal_factor': 1.8,
+        'weekend_factor': 1.4,  # busy on weekends
         'carbon_intensity': 350,
         'baseline_waste': 0.30
     },
@@ -40,6 +42,7 @@ SECTORS = {
         'off_peak_multiplier': 0.8,  # night reduction
         'seasonal_peak_months': [],  # no strong seasonality
         'seasonal_factor': 1.0,
+        'weekend_factor': 0.9,  # less activity
         'carbon_intensity': 250,
         'baseline_waste': 0.10
     },
@@ -50,6 +53,7 @@ SECTORS = {
         'off_peak_multiplier': 0.4,
         'seasonal_peak_months': [2,3,4,9,10],  # Feb-April (new models), Sept-Oct (festive demand)
         'seasonal_factor': 1.4,
+        'weekend_factor': 1.1,  # slight increase
         'carbon_intensity': 400,
         'baseline_waste': 0.25
     },
@@ -60,6 +64,7 @@ SECTORS = {
         'off_peak_multiplier': 0.3,
         'seasonal_peak_months': [1,2,3,11,12],  # budget & year-end
         'seasonal_factor': 1.2,
+        'weekend_factor': 0.8,  # lower on weekends
         'carbon_intensity': 300,
         'baseline_waste': 0.15
     },
@@ -70,6 +75,7 @@ SECTORS = {
         'off_peak_multiplier': 0.4,
         'seasonal_peak_months': [12,1,2,3],  # financial year end
         'seasonal_factor': 1.25,
+        'weekend_factor': 1.0,  # normal
         'carbon_intensity': 320,
         'baseline_waste': 0.18
     }
@@ -104,10 +110,14 @@ def generate_sector_data(sector_name, start_date='2024-01-01', days=365, seed=42
         if month in config['seasonal_peak_months']:
             seasonal = config['seasonal_factor']
         
+        # Weekend factor
+        is_weekend = dt.weekday() >= 5  # 5=Sat, 6=Sun
+        weekend_mult = config.get('weekend_factor', 1.0) if is_weekend else 1.0
+        
         # Random noise
         noise = np.random.normal(0, 0.1 * base)
         
-        consumption = base * factor * seasonal + noise
+        consumption = base * factor * seasonal * weekend_mult + noise
         consumption = max(0.2, consumption)
         energy.append(round(consumption, 2))
     
