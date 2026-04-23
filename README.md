@@ -21,7 +21,7 @@ This project builds **three AI dashboards** that help homes, industries, and gri
 
 ---
 
-## ?? What This Project Solves
+##  What This Project Solves
 
 - Predicts short-term electricity demand using an AI model.
 - Recommends load shedding for non-critical appliances when demand exceeds thresholds.
@@ -30,7 +30,7 @@ This project builds **three AI dashboards** that help homes, industries, and gri
 
 ---
 
-## ? Key Features
+##  Key Features
 
 - **Home Forecast + Load Shedding**: LSTM/MLP model predicts next-hour power and suggests appliance shedding.
 - **Sector Carbon Credits**: Domestic, Food, Pharma, Car, Government, and Private sectors with seasonal patterns.
@@ -40,7 +40,7 @@ This project builds **three AI dashboards** that help homes, industries, and gri
 
 ---
 
-## ?? Tech Stack
+##  Tech Stack
 
 - Python
 - Pandas, NumPy
@@ -51,7 +51,7 @@ This project builds **three AI dashboards** that help homes, industries, and gri
 
 ---
 
-## ?? Project Structure
+##  Project Structure
 
 ```
 AI-Powered Energy Consumption Forecasting System/
