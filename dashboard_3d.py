@@ -13,6 +13,9 @@ import dash
 from dash import dcc, html, Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
+import joblib
+from datetime import timedelta
+from src.sector_analysis import generate_sector_data, SECTORS, calculate_carbon_credits
 
 # Load your advanced dataset (or generate on the fly)
 try:
@@ -33,12 +36,110 @@ df['date'] = df.index.date
 # Create a risk composite score for coloring
 df['composite_risk'] = (df['PowerCut_Risk'] + df['ShortCircuit_Risk'] + df['ExcessElectricity_Risk']) / 3
 
-# Initialize Dash app
-app = dash.Dash(__name__)
+# Load appliance data
+try:
+    df_app = pd.read_csv('data/raw/appliance_data.csv', index_col='Datetime', parse_dates=True)
+except FileNotFoundError:
+    print("Appliance data not found.")
 
-app.layout = html.Div([
-    html.H1("⚡ Energy Forecasting Dashboard", style={'textAlign': 'center'}),
+# Load model
+model = joblib.load('models/nn_energy_model.save')
+scaler = joblib.load('models/scaler.save')
+SEQ_LEN = 24
+
+PRIORITY_ORDER = ['Robot_W', 'TV_W', 'Lights_W', 'Fridge_W', 'WaterHeater_W', 'HVAC_W']
+APPLIANCE_NAMES = {
+    'Robot_W': 'Cleaning Robot', 'TV_W': 'Smart TV', 'Lights_W': 'Lights',
+    'Fridge_W': 'Refrigerator', 'WaterHeater_W': 'Water Heater', 'HVAC_W': 'HVAC'
+}
+
+# Sector data
+sector_names = [s.replace('_', ' ') for s in SECTORS.keys()]
+sector_keys = list(SECTORS.keys())
+all_data = {}
+carbon_results = {}
+for key in sector_keys:
+    df_sector = generate_sector_data(key, days=30)  # shorter for demo
+    all_data[key] = df_sector
+    credits, co2 = calculate_carbon_credits(df_sector['Energy_kW'], 
+                                            SECTORS[key]['baseline_waste'],
+                                            SECTORS[key]['carbon_intensity'])
+    carbon_results[key] = {'credits': credits, 'co2_tons': co2}
+
+# --- ML Prediction implementation ---
+def predict_next_24h(last_24h_actual):
+    # MLP expects a flat array of shape (1, 24)
+    last_24h_actual = np.array(last_24h_actual).flatten()
+    scaled = scaler.transform(last_24h_actual.reshape(-1, 1)).flatten()
+    predictions = []
+    current_seq = scaled[-SEQ_LEN:].copy()
+    for _ in range(24):
+        X_input = current_seq.reshape(1, SEQ_LEN) # Reshape for Scikit-Learn 2D
+        pred_scaled = model.predict(X_input)[0]
+        predictions.append(pred_scaled)
+        current_seq = np.roll(current_seq, -1)
+        current_seq[-1] = pred_scaled
+    return scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
+
+def get_shedding_plan(current_loads, predicted_load, threshold):
+    """Return list of appliances to shed and a message."""
+    priority = PRIORITY_ORDER
+    if predicted_load <= threshold:
+        return [], f"✅ Predicted load ({predicted_load:.0f}W) within threshold. No shedding."
     
+    excess = predicted_load - threshold
+    to_shed = []
+    for app in priority:
+        if current_loads.get(app, 0) > 0:
+            to_shed.append(app)
+            excess -= current_loads[app]
+            if excess <= 0:
+                break
+    if not to_shed:
+        return [], f"⚠️ Predicted load ({predicted_load:.0f}W) exceeds threshold, but no appliances to shed."
+    return to_shed, f"🔴 Shedding: {', '.join([APPLIANCE_NAMES[a] for a in to_shed])} to reduce by {predicted_load - threshold:.0f}W."
+
+# --- Layouts ---
+home_layout = html.Div([
+    html.H3("Neural Network Forecast for Next 24 Hours"),
+    dcc.Graph(id='forecast-graph'),
+    html.Hr(),
+    html.H3("Load Shedding Controller"),
+    html.Div([
+        html.Label("Power Threshold (Watts):"),
+        dcc.Slider(id='threshold-slider', min=100, max=7000, step=100, value=4500, updatemode='drag',
+                   marks={100:'0.1kW', 500:'0.5kW', 1000:'1kW', 2000:'2kW', 3000:'3kW', 4000:'4kW', 5000:'5kW', 6000:'6kW', 7000:'7kW'}),
+        html.Button('Refresh Forecast & Plan', id='refresh-btn', n_clicks=0,
+                    style={'margin': '10px', 'backgroundColor': '#4CAF50', 'color': 'white', 'padding': '10px', 'border': 'none', 'borderRadius': '5px'}),
+        html.Button('🔴 Simulate Peak Load (>2000W)', id='peak-btn', n_clicks=0,
+                    style={'margin': '10px', 'backgroundColor': '#f44336', 'color': 'white', 'padding': '10px', 'border': 'none', 'borderRadius': '5px'}),
+    ]),
+    html.Div(id='shedding-output', style={'marginTop': '20px', 'padding': '15px', 'borderRadius': '5px',
+                                          'backgroundColor': '#f9f9f9', 'fontSize': '18px'}),
+    html.Div(id='appliance-status', style={'marginTop': '20px'})
+])
+
+sector_layout = html.Div([
+    html.H2("🏭 Sector Carbon Credits Analysis", style={'textAlign': 'center'}),
+    html.Div([
+        html.Label("Select Sector:"),
+        dcc.Dropdown(id='sector-dropdown', options=[{'label': s, 'value': k} for s,k in zip(sector_names, sector_keys)],
+                     value='Domestic', clearable=False, style={'width': '50%', 'margin': 'auto'}),
+    ], style={'textAlign': 'center', 'margin': 20}),
+    
+    html.Div([
+        dcc.Graph(id='carbon-gauge', style={'width': '48%', 'display': 'inline-block'}),
+        dcc.Graph(id='weekly-pattern', style={'width': '48%', 'display': 'inline-block'}),
+    ]),
+    
+    html.Div([
+        dcc.Graph(id='seasonal-trend', style={'width': '100%'}),
+    ]),
+    
+    html.Div(id='credit-text', style={'textAlign': 'center', 'marginTop': 20, 'fontSize': 18})
+])
+
+current_3d_layout = html.Div([
     html.Div([
         html.Label("Select Date Range:"),
         dcc.DatePickerRange(
@@ -63,6 +164,19 @@ app.layout = html.Div([
         html.H3("Live Risk Indicators (Latest Hour)"),
         html.Div(id='live-risk-gauge')
     ], style={'margin': 20}),
+])
+
+# Initialize Dash app
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("⚡ Energy Forecasting Dashboard", style={'textAlign': 'center'}),
+    
+    dcc.Tabs([
+        dcc.Tab(label='Home Energy Management', children=[home_layout]),
+        dcc.Tab(label='Sector Carbon Credit Analysis', children=[sector_layout]),
+        dcc.Tab(label='Energy Analytics & 3D Risk Dashboard', children=[current_3d_layout]),
+    ])
 ])
 
 # Callback for 2D scatter plot
@@ -199,6 +313,125 @@ def live_risk(_, __):
         ),
         html.P(f"Latest hour: {latest.name} | Energy: {latest['Energy_kW']} kW | Carbon Credit: ${latest['CarbonCredit_USD']}")
     ])
+
+# --- Home Energy Management Callbacks ---
+@app.callback(
+    [Output('forecast-graph', 'figure'),
+     Output('shedding-output', 'children'),
+     Output('appliance-status', 'children')],
+    [Input('refresh-btn', 'n_clicks'),
+     Input('threshold-slider', 'value'),
+     Input('peak-btn', 'n_clicks')]
+)
+def update_forecast_and_shedding(n_clicks, threshold, peak_clicks):
+    # Get actual data
+    last_24h_actual = df_app['Total_Power_W'].iloc[-SEQ_LEN:].values
+    preds = predict_next_24h(last_24h_actual)
+    
+    last_timestamp = df_app.index[-1]
+    forecast_index = [last_timestamp + timedelta(hours=i+1) for i in range(24)]
+    actual_48h = df_app['Total_Power_W'].iloc[-48:]
+    
+    # Determine predicted load for next hour
+    normal_predicted = preds[0]
+    # Peak mode toggle: if peak_clicks is odd, use high load
+    if (peak_clicks or 0) % 2 == 1:
+        predicted_load = 3500  # force >2000W
+        peak_mode_note = "⚠️ PEAK MODE ACTIVE (simulated high demand) ⚠️"
+    else:
+        predicted_load = normal_predicted
+        peak_mode_note = ""
+    
+    # Plot
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=actual_48h.index, y=actual_48h.values,
+                             mode='lines', name='Actual (last 48h)', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=forecast_index, y=preds,
+                             mode='lines+markers', name='Neural Net Forecast (next 24h)',
+                             line=dict(color='red', dash='dash')))
+    fig.add_hline(y=threshold, line_dash="dot", line_color="green",
+                  annotation_text=f"Threshold = {threshold}W")
+    fig.update_layout(title=f'Energy Forecast vs Actual {peak_mode_note}',
+                      xaxis_title='Time', yaxis_title='Power (Watts)')
+    
+    # Current appliance loads
+    latest = df_app.iloc[-1]
+    current_loads = {col: latest[col] for col in PRIORITY_ORDER}
+    
+    # Shedding plan
+    plan, msg = get_shedding_plan(current_loads, predicted_load, threshold)
+    
+    if plan:
+        plan_html = html.Div([
+            html.H4("Recommended Actions:", style={'color': '#c62828'}),
+            html.Ul([html.Li(f"Turn OFF {APPLIANCE_NAMES[app]}") for app in plan])
+        ], style={'padding': '10px', 'backgroundColor': '#ffebee'})
+    else:
+        plan_html = html.Div(msg, style={'color': 'green' if 'within' in msg else 'orange', 'fontWeight': 'bold'})
+    
+    shedding_display = html.Div([
+        html.H4(f"Predicted next hour load: {predicted_load:.0f} W"),
+        plan_html
+    ])
+    
+    # Appliance status table with ON/OFF comment and Red Selection formatting
+    status_rows = []
+    for app in PRIORITY_ORDER:
+        power = current_loads[app]
+        status = "🔴 ON" if power > 0 else "⚪ OFF"
+        
+        row_style = {'border': '1px solid gray'}
+        if app in plan:
+            row_style.update({'backgroundColor': '#ffebee', 'color': '#c62828', 'fontWeight': 'bold'})
+            
+        status_rows.append(html.Tr([
+            html.Td(APPLIANCE_NAMES[app], style={'padding': '8px'}),
+            html.Td(f"{power:.0f}", style={'padding': '8px'}),
+            html.Td(status, style={'padding': '8px'})
+        ], style=row_style))
+        
+    status_table = html.Table(
+        [html.Tr([html.Th("Appliance", style={'padding':'8px'}), html.Th("Power (W)", style={'padding':'8px'}), html.Th("Status", style={'padding':'8px'})], style={'backgroundColor': '#f5f5f5'})] + status_rows,
+        style={'width': '100%', 'borderCollapse': 'collapse', 'border': '1px solid gray', 'textAlign': 'left'}
+    )
+    
+    return fig, shedding_display, status_table
+
+# --- Sector Analysis Callbacks ---
+@app.callback(
+    [Output('carbon-gauge', 'figure'),
+     Output('weekly-pattern', 'figure'),
+     Output('seasonal-trend', 'figure'),
+     Output('credit-text', 'children')],
+    [Input('sector-dropdown', 'value')]
+)
+def update_sector_analysis(sector_key):
+    df_sector = all_data[sector_key]
+    credits = carbon_results[sector_key]['credits']
+    co2 = carbon_results[sector_key]['co2_tons']
+    config = SECTORS[sector_key]
+
+    gauge = go.Figure(go.Indicator(
+        mode = "gauge+number+delta",
+        value = credits,
+        title = {'text': f"Carbon Credits Earned (₹{config['carbon_price_per_ton']}/ton)"},
+        delta = {'reference': 0},
+        gauge = {'axis': {'range': [0, max(credits*1.2, 100)]}, 'bar': {'color': "green"}}
+    ))
+    
+    # Weekly pattern
+    weekly = df_sector.groupby(df_sector.index.dayofweek)['Energy_kW'].mean()
+    weekly_fig = px.bar(x=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], y=weekly.values,
+                        title='Average Energy by Day of Week', labels={'x': 'Day', 'y': 'Energy (kW)'})
+    
+    # Seasonal trend
+    seasonal = df_sector.groupby(df_sector.index.month)['Energy_kW'].mean()
+    seasonal_fig = px.line(x=range(1,13), y=seasonal.values,
+                           title='Average Energy by Month', labels={'x': 'Month', 'y': 'Energy (kW)'})
+    
+    credit_text = f"🏆 {sector_key.replace('_', ' ')} Sector: Earned ₹{credits:.0f} in carbon credits by saving {co2:.1f} tons of CO₂ through AI forecasting."
+    
+    return gauge, weekly_fig, seasonal_fig, credit_text
 
 if __name__ == '__main__':
     app.run(debug=True, port=8050)
